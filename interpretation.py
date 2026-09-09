@@ -551,7 +551,6 @@ def free_me(c):
         if len(seen)==2: break
     if seen:
         out += ["", "ЧТО ОСОБЕННО ЗАМЕТНО В ХАРАКТЕРЕ", *seen]
-    out += ["", karmic_nodes_report(c, child=False)]
     return "\n".join(out)
 
 
@@ -839,6 +838,11 @@ def karmic_nodes_report(c, child=False):
     hits=[]
     for node_name in ("Северный узел","Южный узел"):
         for a in c.get("aspects",{}).get(node_name,[]):
+            other = a.get("planet")
+            # The lunar nodes are always opposite each other by definition;
+            # this is not an individual chart signature and must not be reported.
+            if other in ("Северный узел", "Южный узел"):
+                continue
             if a.get("orb",99)<=4:
                 hits.append((a.get("orb",99),node_name,a))
     hits.sort(key=lambda x:x[0])
