@@ -16,7 +16,7 @@ geo=Nominatim(user_agent="astroego_complete")
 PROFILES={}
 UNLOCKS={}
 PRICES={"love":250,"want":200,"talent":250,"career":350,"money":300,"change":300,"solar":600,"now":200,"child":450}
-LABEL={"love":"❤️ Как я люблю","want":"🔥 Чего я хочу","talent":"✨ В чём мой талант","career":"💼 В чём моё дело","money":"💰 Как я зарабатываю","change":"🖤 Что меня меняет","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка"}
+LABEL={"love":"❤️ Как я люблю","want":"🔥 Чего я хочу","talent":"✨ В чём мой талант","career":"💼 В чём моё дело","money":"💰 Как я зарабатываю","change":"🖤 Точки роста","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка"}
 
 class Birth(StatesGroup): date=State(); time=State(); city=State()
 class Solar(StatesGroup): city=State()
@@ -24,10 +24,10 @@ class Child(StatesGroup): date=State(); time=State(); city=State()
 
 def menu():
     rows=[
-      [InlineKeyboardButton(text="🪞 Я",callback_data="me")],
+      [InlineKeyboardButton(text="Я",callback_data="me")],
       [InlineKeyboardButton(text="❤️ Люблю",callback_data="sec:love"),InlineKeyboardButton(text="🔥 Хочу",callback_data="sec:want")],
       [InlineKeyboardButton(text="✨ Могу",callback_data="sec:talent"),InlineKeyboardButton(text="💼 Делаю",callback_data="sec:career")],
-      [InlineKeyboardButton(text="💰 Имею",callback_data="sec:money"),InlineKeyboardButton(text="🖤 Меняюсь",callback_data="sec:change")],
+      [InlineKeyboardButton(text="💰 Имею",callback_data="sec:money"),InlineKeyboardButton(text="🖤 Точки роста",callback_data="sec:change")],
       [InlineKeyboardButton(text="☀️ Мой год",callback_data="sec:solar"),InlineKeyboardButton(text="🕰 Сейчас",callback_data="sec:now")],
       [InlineKeyboardButton(text="🌱 Ребёнок",callback_data="sec:child")]
     ]
