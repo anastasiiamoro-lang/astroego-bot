@@ -36,59 +36,6 @@ def menu():
 def unlock_kb(sec):
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"Открыть полный разбор · ⭐ {PRICES[sec]}",callback_data=f"buy:{sec}")],[InlineKeyboardButton(text="← Назад",callback_data="menu")]])
 
-
-
-def split_text(text, limit=3800):
-    """Safely split long Telegram text, preferably on paragraph boundaries."""
-    text = str(text or "").strip()
-    if not text:
-        return [""]
-    if len(text) <= limit:
-        return [text]
-
-    chunks = []
-    current = ""
-
-    for paragraph in text.split("\n\n"):
-        paragraph = paragraph.strip()
-        if not paragraph:
-            continue
-
-        candidate = paragraph if not current else current + "\n\n" + paragraph
-        if len(candidate) <= limit:
-            current = candidate
-            continue
-
-        if current:
-            chunks.append(current)
-            current = ""
-
-        # If one paragraph itself is too long, split it gently by sentences/words.
-        rest = paragraph
-        while len(rest) > limit:
-            cut = rest.rfind(". ", 0, limit)
-            if cut > limit // 2:
-                cut += 1
-            else:
-                cut = rest.rfind(" ", 0, limit)
-            if cut <= 0:
-                cut = limit
-            chunks.append(rest[:cut].strip())
-            rest = rest[cut:].strip()
-        current = rest
-
-    if current:
-        chunks.append(current)
-
-    return chunks or [text[:limit]]
-
-
-async def send_long(message: Message, text, reply_markup=None):
-    """Send any report in several Telegram-safe messages. Keyboard goes only on the last one."""
-    parts = split_text(text)
-    for i, part in enumerate(parts):
-        await message.answer(part, reply_markup=reply_markup if i == len(parts) - 1 else None)
-
 async def locate(city):
     loc=await asyncio.to_thread(geo.geocode,city,language="ru",exactly_one=True)
     if not loc: raise ValueError("Не нашла город. Напиши город и страну.")
@@ -114,7 +61,7 @@ async def bcity(m:Message,state:FSMContext):
     try:
         lat,lon=await locate(m.text.strip()); c=chart(d["date"],d["time"],lat,lon)
         PROFILES[m.from_user.id]={"chart":c,"birth_city":m.text.strip()}
-        await state.clear(); await send_long(m, free_me(c), reply_markup=menu())
+        await state.clear(); await m.answer(free_me(c),reply_markup=menu())
     except Exception as e: await m.answer(f"Не получилось построить карту: {e}")
 
 @router.callback_query(F.data=="menu")
@@ -125,7 +72,7 @@ async def back(q:CallbackQuery):
 async def me(q:CallbackQuery):
     p=PROFILES.get(q.from_user.id)
     if not p: await q.message.answer("Сначала нажми /start и введи данные рождения.")
-    else: await send_long(q.message, free_me(p["chart"]), reply_markup=menu())
+    else: await q.message.answer(free_me(p["chart"]),reply_markup=menu())
     await q.answer()
 
 @router.callback_query(F.data.startswith("sec:"))
@@ -145,11 +92,11 @@ async def section(q:CallbackQuery,state:FSMContext):
     if sec=="now":
         now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
         unlocked=sec in UNLOCKS.get(q.from_user.id,set())
-        await send_long(q.message, current_report(p["chart"],tc,full=unlocked), reply_markup=menu() if unlocked else unlock_kb(sec)); await q.answer(); return
+        await q.message.answer(current_report(p["chart"],tc,full=unlocked),reply_markup=menu() if unlocked else unlock_kb(sec)); await q.answer(); return
     if sec in UNLOCKS.get(q.from_user.id,set()):
-        await send_long(q.message, deep(p["chart"],sec), reply_markup=menu())
+        await q.message.answer(deep(p["chart"],sec),reply_markup=menu())
     else:
-        await send_long(q.message, preview(p["chart"],sec), reply_markup=unlock_kb(sec))
+        await q.message.answer(preview(p["chart"],sec),reply_markup=unlock_kb(sec))
     await q.answer()
 
 @router.callback_query(F.data.startswith("buy:"))
@@ -173,13 +120,13 @@ async def paid(m:Message,state:FSMContext):
     elif sec=="child":
         cc=p.get("child_chart") if p else None
         if cc:
-            await send_long(m, child_report(cc,full=True), reply_markup=menu())
+            await m.answer(child_report(cc,full=True),reply_markup=menu())
         else:
             await m.answer("Введи дату рождения ребёнка ДД.ММ.ГГГГ:"); await state.set_state(Child.date)
     elif sec=="now":
         now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
-        await send_long(m, current_report(p["chart"],tc,full=True), reply_markup=menu())
-    else: await send_long(m, deep(p["chart"],sec), reply_markup=menu())
+        await m.answer(current_report(p["chart"],tc,full=True),reply_markup=menu())
+    else: await m.answer(deep(p["chart"],sec),reply_markup=menu())
 
 @router.message(Solar.city)
 async def solar_city(m:Message,state:FSMContext):
@@ -190,7 +137,7 @@ async def solar_city(m:Message,state:FSMContext):
         today=datetime.now()
         year=today.year if (today.month,today.day)<=(birth.month,birth.day) else today.year+1
         sr=solar_return(p["chart"],year,lat,lon)
-        await state.clear(); await send_long(m, solar_report(p["chart"],sr), reply_markup=menu())
+        await state.clear(); await m.answer(solar_report(p["chart"],sr),reply_markup=menu())
     except Exception as e: await m.answer(f"Не получилось рассчитать соляр: {e}")
 
 @router.message(Child.date)
@@ -207,7 +154,7 @@ async def ccity(m:Message,state:FSMContext):
         PROFILES.setdefault(m.from_user.id,{})["child_chart"]=c
         unlocked="child" in UNLOCKS.get(m.from_user.id,set())
         await state.clear()
-        await send_long(m, child_report(c,full=unlocked), reply_markup=menu() if unlocked else unlock_kb("child"))
+        await m.answer(child_report(c,full=unlocked),reply_markup=menu() if unlocked else unlock_kb("child"))
     except Exception as e: await m.answer(f"Не получилось построить карту: {e}")
 
 @router.message(Command("tech"))
@@ -215,7 +162,7 @@ async def tech(m:Message):
     admin=os.getenv("ADMIN_ID")
     if not admin or str(m.from_user.id)!=str(admin): return
     p=PROFILES.get(m.from_user.id)
-    if p: await send_long(m, technical(p["chart"]))
+    if p: await m.answer(technical(p["chart"]))
 
 async def main():
     token=os.getenv("BOT_TOKEN")
