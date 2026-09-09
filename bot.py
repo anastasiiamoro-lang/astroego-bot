@@ -89,9 +89,10 @@ async def section(q:CallbackQuery,state:FSMContext):
         else:
             await q.message.answer("☀️ Мой год\n\nСоляр строится на точный момент возвращения Солнца и на город, где ты проводишь день рождения. Он читается только вместе с натальной картой.\n\nВ полном разборе: главная тема года, отношения, работа и деньги, дом и семья, энергия, поездки, возможности и напряжённые зоны.",reply_markup=unlock_kb(sec))
         await q.answer(); return
-    if sec=="now" and sec in UNLOCKS.get(q.from_user.id,set()):
+    if sec=="now":
         now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
-        await q.message.answer(current_report(p["chart"],tc),reply_markup=menu()); await q.answer(); return
+        unlocked=sec in UNLOCKS.get(q.from_user.id,set())
+        await q.message.answer(current_report(p["chart"],tc,full=unlocked),reply_markup=menu() if unlocked else unlock_kb(sec)); await q.answer(); return
     if sec in UNLOCKS.get(q.from_user.id,set()):
         await q.message.answer(deep(p["chart"],sec),reply_markup=menu())
     else:
@@ -117,10 +118,14 @@ async def paid(m:Message,state:FSMContext):
     if sec=="solar":
         await m.answer("В каком городе ты будешь в день рождения? Напиши город и страну."); await state.set_state(Solar.city)
     elif sec=="child":
-        await m.answer("Введи дату рождения ребёнка ДД.ММ.ГГГГ:"); await state.set_state(Child.date)
+        cc=p.get("child_chart") if p else None
+        if cc:
+            await m.answer(child_report(cc,full=True),reply_markup=menu())
+        else:
+            await m.answer("Введи дату рождения ребёнка ДД.ММ.ГГГГ:"); await state.set_state(Child.date)
     elif sec=="now":
         now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
-        await m.answer(current_report(p["chart"],tc),reply_markup=menu())
+        await m.answer(current_report(p["chart"],tc,full=True),reply_markup=menu())
     else: await m.answer(deep(p["chart"],sec),reply_markup=menu())
 
 @router.message(Solar.city)
@@ -143,12 +148,13 @@ async def ctime(m:Message,state:FSMContext):
     await state.update_data(ctime=m.text.strip()); await m.answer("Город рождения ребёнка и страна:"); await state.set_state(Child.city)
 @router.message(Child.city)
 async def ccity(m:Message,state:FSMContext):
-    if "child" not in UNLOCKS.get(m.from_user.id,set()):
-        await m.answer("Полная карта ребёнка открывается после оплаты.",reply_markup=unlock_kb("child")); await state.clear(); return
     d=await state.get_data()
     try:
         lat,lon=await locate(m.text.strip()); c=chart(d["cdate"],d["ctime"],lat,lon)
-        await state.clear(); await m.answer(child_report(c),reply_markup=menu())
+        PROFILES.setdefault(m.from_user.id,{})["child_chart"]=c
+        unlocked="child" in UNLOCKS.get(m.from_user.id,set())
+        await state.clear()
+        await m.answer(child_report(c,full=unlocked),reply_markup=menu() if unlocked else unlock_kb("child"))
     except Exception as e: await m.answer(f"Не получилось построить карту: {e}")
 
 @router.message(Command("tech"))
