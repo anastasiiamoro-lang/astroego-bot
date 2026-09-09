@@ -492,3 +492,134 @@ def build_chart(date_str, time_str, lat, lon):
         "ruled_houses": ruled_houses,
         "key_aspects": key_aspects,
     }
+
+
+# --- Compatibility API used by bot.py / interpretation.py ---
+def fmtdeg(deg):
+    return format_degree(deg)
+
+
+def _calculate_nodes(jd_ut):
+    lon = swe.calc_ut(jd_ut, swe.TRUE_NODE)[0][0] % 360.0
+    north = point_from_longitude("Северный узел", lon)
+    south = point_from_longitude("Южный узел", (lon + 180.0) % 360.0)
+    return north, south
+
+
+def strongest(c, names, limit=4):
+    """Return strongest unique aspects touching any of the requested points."""
+    planets = c["planets"]
+    wanted = set(names)
+    rows = []
+    seen = set()
+    for a_name, a in planets.items():
+        for b_name, b in planets.items():
+            if a_name >= b_name:
+                continue
+            if a_name not in wanted and b_name not in wanted:
+                continue
+            asp = whole_sign_aspect(a, b)
+            if not asp:
+                continue
+            orb = exact_orb(a.longitude, b.longitude, asp)
+            row = {
+                "a": a_name, "b": b_name, "aspect": asp, "orb": orb,
+                "strength": strength_label(b_name if a_name in wanted else a_name, orb),
+            }
+            key = (a_name, b_name, asp)
+            if key not in seen:
+                seen.add(key)
+                rows.append(row)
+    rows.sort(key=lambda x: (strength_rank(x["strength"]), x["orb"]))
+    return rows[:limit]
+
+
+def chart(date_str, time_str, lat, lon):
+    c = build_chart(date_str, time_str, lat, lon)
+    jd = julian_day(c["utc"])
+    north, south = _calculate_nodes(jd)
+    c["planets"]["Северный узел"] = north
+    c["planets"]["Южный узел"] = south
+    c["houses"]["Северный узел"] = house_of_longitude(north.longitude, c["cusps"])
+    c["houses"]["Южный узел"] = house_of_longitude(south.longitude, c["cusps"])
+    c["aspects"]["Северный узел"] = aspects_for("Северный узел", c["planets"])
+    c["aspects"]["Южный узел"] = aspects_for("Южный узел", c["planets"])
+    c["sun_dispositor"] = c.get("sun_ruler_name")
+    c["asc_ruler"] = c.get("asc_ruler_name")
+    c["date_str"] = date_str
+    c["time_str"] = time_str
+    c["lat"] = lat
+    c["lon"] = lon
+    return c
+
+
+def _sun_longitude_at(dt_utc):
+    return swe.calc_ut(julian_day(dt_utc), swe.SUN)[0][0] % 360.0
+
+
+def _signed_angle(x):
+    return (x + 180.0) % 360.0 - 180.0
+
+
+def solar_return(natal, year, lat, lon):
+    """Build a solar-return chart for the requested year and location."""
+    from datetime import timedelta, timezone
+
+    target = natal["planets"]["Солнце"].longitude
+    natal_utc = natal.get("utc")
+    if natal_utc is None:
+        raise ValueError("В натальной карте отсутствует время рождения")
+
+    # Search around the birthday in UTC, then refine by bisection.
+    center = natal_utc.replace(year=int(year))
+    start = center - timedelta(days=3)
+    step = timedelta(hours=3)
+    prev_t = start
+    prev_f = _signed_angle(_sun_longitude_at(prev_t) - target)
+    bracket = None
+    for i in range(1, 49):
+        cur_t = start + i * step
+        cur_f = _signed_angle(_sun_longitude_at(cur_t) - target)
+        if prev_f == 0 or cur_f == 0 or (prev_f < 0 <= cur_f) or (cur_f < 0 <= prev_f):
+            # Reject discontinuity across +/-180.
+            if abs(prev_f - cur_f) < 20:
+                bracket = (prev_t, cur_t)
+                break
+        prev_t, prev_f = cur_t, cur_f
+    if bracket is None:
+        # Fallback: choose closest sample and refine around it.
+        samples=[]
+        for i in range(49):
+            tt=start+i*step
+            samples.append((abs(_signed_angle(_sun_longitude_at(tt)-target)),tt))
+        _, best=min(samples,key=lambda x:x[0])
+        bracket=(best-timedelta(hours=3),best+timedelta(hours=3))
+
+    lo, hi = bracket
+    for _ in range(40):
+        mid = lo + (hi - lo) / 2
+        flo = _signed_angle(_sun_longitude_at(lo) - target)
+        fmid = _signed_angle(_sun_longitude_at(mid) - target)
+        if abs(fmid) < 1e-8:
+            lo = hi = mid
+            break
+        if flo * fmid <= 0:
+            hi = mid
+        else:
+            lo = mid
+    ret_utc = lo + (hi - lo) / 2
+
+    jd = julian_day(ret_utc)
+    planets = calculate_planets(jd)
+    cusps, asc, mc = calculate_placidus_houses(jd, lat, lon)
+    houses = {name: house_of_longitude(pt.longitude, cusps) for name, pt in planets.items()}
+    north, south = _calculate_nodes(jd)
+    planets["Северный узел"] = north
+    planets["Южный узел"] = south
+    houses["Северный узел"] = house_of_longitude(north.longitude, cusps)
+    houses["Южный узел"] = house_of_longitude(south.longitude, cusps)
+    return {
+        "utc": ret_utc, "planets": planets, "cusps": cusps,
+        "asc": asc, "mc": mc, "houses": houses,
+        "lat": lat, "lon": lon,
+    }
