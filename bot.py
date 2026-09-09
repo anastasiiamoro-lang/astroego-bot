@@ -1,6 +1,7 @@
 
 import asyncio, os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -16,7 +17,7 @@ geo=Nominatim(user_agent="astroego_complete")
 PROFILES={}
 UNLOCKS={}
 PRICES={"love":250,"want":200,"talent":250,"career":350,"money":300,"change":300,"solar":600,"now":200,"child":450}
-LABEL={"love":"❤️ Как я люблю","want":"🔥 Чего я хочу","talent":"✨ В чём мой талант","career":"💼 В чём моё дело","money":"💰 Как я зарабатываю","change":"🖤 Точки роста","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка"}
+LABEL={"love":"❤️ Любовь, отношения, брак","want":"🔥 Как я действую","talent":"✨ Мои таланты","career":"💼 Моё дело","money":"💰 Деньги","change":"🖤 Точки роста","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка"}
 
 class Birth(StatesGroup): date=State(); time=State(); city=State()
 class Solar(StatesGroup): city=State()
@@ -25,9 +26,9 @@ class Child(StatesGroup): date=State(); time=State(); city=State()
 def menu():
     rows=[
       [InlineKeyboardButton(text="Я",callback_data="me")],
-      [InlineKeyboardButton(text="❤️ Люблю",callback_data="sec:love"),InlineKeyboardButton(text="🔥 Хочу",callback_data="sec:want")],
-      [InlineKeyboardButton(text="✨ Могу",callback_data="sec:talent"),InlineKeyboardButton(text="💼 Делаю",callback_data="sec:career")],
-      [InlineKeyboardButton(text="💰 Имею",callback_data="sec:money"),InlineKeyboardButton(text="🖤 Точки роста",callback_data="sec:change")],
+      [InlineKeyboardButton(text="❤️ Отношения",callback_data="sec:love"),InlineKeyboardButton(text="🔥 Действую",callback_data="sec:want")],
+      [InlineKeyboardButton(text="✨ Таланты",callback_data="sec:talent"),InlineKeyboardButton(text="💼 Моё дело",callback_data="sec:career")],
+      [InlineKeyboardButton(text="💰 Деньги",callback_data="sec:money"),InlineKeyboardButton(text="🖤 Точки роста",callback_data="sec:change")],
       [InlineKeyboardButton(text="☀️ Мой год",callback_data="sec:solar"),InlineKeyboardButton(text="🕰 Сейчас",callback_data="sec:now")],
       [InlineKeyboardButton(text="🌱 Ребёнок",callback_data="sec:child")]
     ]
@@ -90,7 +91,7 @@ async def section(q:CallbackQuery,state:FSMContext):
             await q.message.answer("☀️ Мой год\n\nСоляр строится на точный момент возвращения Солнца и на город, где ты проводишь день рождения. Он читается только вместе с натальной картой.\n\nВ полном разборе: главная тема года, отношения, работа и деньги, дом и семья, энергия, поездки, возможности и напряжённые зоны.",reply_markup=unlock_kb(sec))
         await q.answer(); return
     if sec=="now":
-        now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
+        now=datetime.now(ZoneInfo(p["chart"]["timezone"])); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
         unlocked=sec in UNLOCKS.get(q.from_user.id,set())
         await q.message.answer(current_report(p["chart"],tc,full=unlocked),reply_markup=menu() if unlocked else unlock_kb(sec)); await q.answer(); return
     if sec in UNLOCKS.get(q.from_user.id,set()):
@@ -124,7 +125,7 @@ async def paid(m:Message,state:FSMContext):
         else:
             await m.answer("Введи дату рождения ребёнка ДД.ММ.ГГГГ:"); await state.set_state(Child.date)
     elif sec=="now":
-        now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
+        now=datetime.now(ZoneInfo(p["chart"]["timezone"])); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
         await m.answer(current_report(p["chart"],tc,full=True),reply_markup=menu())
     else: await m.answer(deep(p["chart"],sec),reply_markup=menu())
 
