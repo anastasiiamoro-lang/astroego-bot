@@ -9,7 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice, PreCheckoutQuery
 from geopy.geocoders import Nominatim
 from egoist_astro_engine_20260910 import chart, solar_return, current_transits
-from egoist_interpretation_20260910 import free_me, preview, deep, current_report, solar_report, child_report, karmic_nodes_report, technical
+from egoist_interpretation_20260910 import free_me, preview, deep, current_report, solar_report, child_report, karmic_nodes_report, karmic_nodes_preview, technical
 
 router=Router()
 geo=Nominatim(user_agent="astroego_complete")
@@ -48,8 +48,8 @@ def save_unlock(user_id, section, payment=None):
 # Initialize DB at startup/import time so configuration errors fail visibly.
 with _db():
     pass
-PRICES={"love":600,"want":600,"talent":600,"career":800,"money":800,"change":600,"solar":1200,"now":600,"child":900}
-LABEL={"love":"❤️ Как я люблю","want":"🔥 Чего я хочу","talent":"✨ В чём мой талант","career":"💼 В чём моё дело","money":"💰 Как я зарабатываю","change":"🖤 Точки роста","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка"}
+PRICES={"love":600,"want":600,"talent":600,"career":800,"money":800,"change":600,"solar":1200,"now":600,"child":900,"nodes":600}
+LABEL={"love":"❤️ Как я люблю","want":"🔥 Чего я хочу","talent":"✨ В чём мой талант","career":"💼 В чём моё дело","money":"💰 Как я зарабатываю","change":"🖤 Точки роста","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка","nodes":"☊ Кармические узлы"}
 
 class Birth(StatesGroup): date=State(); time=State(); city=State()
 class Solar(StatesGroup): city=State()
@@ -143,8 +143,10 @@ async def nodes(q:CallbackQuery):
     p=PROFILES.get(q.from_user.id)
     if not p:
         await q.message.answer("Сначала нажми /start и введи данные рождения.")
-    else:
+    elif has_unlock(q.from_user.id, "nodes"):
         await send_long(q.message.answer, karmic_nodes_report(p["chart"], child=False), reply_markup=menu())
+    else:
+        await send_long(q.message.answer, karmic_nodes_preview(p["chart"]), reply_markup=unlock_kb("nodes"))
     await q.answer()
 
 @router.callback_query(F.data.startswith("sec:"))
@@ -219,6 +221,8 @@ async def paid(m:Message,state:FSMContext):
             await send_long(m.answer, current_report(p["chart"],tc,full=True), reply_markup=menu())
         except Exception as e:
             await m.answer(f"Не получилось рассчитать текущие транзиты: {e}", reply_markup=menu())
+    elif sec=="nodes":
+        await send_long(m.answer, karmic_nodes_report(p["chart"], child=False), reply_markup=menu())
     else: await send_long(m.answer, deep(p["chart"],sec), reply_markup=menu())
 
 @router.message(Solar.city)
