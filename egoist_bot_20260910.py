@@ -258,8 +258,16 @@ async def tech(m:Message):
     if p: await send_long(m.answer, technical(p["chart"]))
 
 async def main():
-    token=os.getenv("BOT_TOKEN")
-    if not token: raise RuntimeError("BOT_TOKEN не задан.")
+    raw_token = os.getenv("BOT_TOKEN", "")
+    # Railway/mobile copy-paste can leave spaces, line breaks, or wrapping quotes.
+    # Telegram bot tokens never contain whitespace, so normalize safely before aiogram validation.
+    token = "".join(raw_token.split()).strip("\"'")
+    if not token:
+        raise RuntimeError("BOT_TOKEN не задан.")
+    if ":" not in token:
+        raise RuntimeError(
+            f"BOT_TOKEN имеет неверный формат после очистки: длина={len(token)}, двоеточий={token.count(':')}"
+        )
     bot=Bot(token); dp=Dispatcher(storage=MemoryStorage()); dp.include_router(router)
     await dp.start_polling(bot)
 
