@@ -1,5 +1,5 @@
 
-import asyncio, os
+import asyncio, os, sqlite3
 from datetime import datetime
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
@@ -8,14 +8,47 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice, PreCheckoutQuery
 from geopy.geocoders import Nominatim
-from egoist_astro_engine_20260910 import chart, solar_return
+from egoist_astro_engine_20260910 import chart, solar_return, current_transits
 from egoist_interpretation_20260910 import free_me, preview, deep, current_report, solar_report, child_report, karmic_nodes_report, technical
 
 router=Router()
 geo=Nominatim(user_agent="astroego_complete")
 PROFILES={}
-UNLOCKS={}
-PRICES={"love":250,"want":200,"talent":250,"career":350,"money":300,"change":300,"solar":600,"now":200,"child":450}
+
+# Purchases must survive bot restarts. On Railway, mount a persistent volume at /data.
+DB_PATH = os.getenv("EGOIST_DB_PATH") or ("/data/egoist.sqlite3" if os.path.isdir("/data") else "egoist.sqlite3")
+
+def _db():
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""CREATE TABLE IF NOT EXISTS purchases (
+        user_id INTEGER NOT NULL,
+        section TEXT NOT NULL,
+        purchased_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        telegram_charge_id TEXT,
+        provider_charge_id TEXT,
+        PRIMARY KEY (user_id, section)
+    )""")
+    return conn
+
+def has_unlock(user_id, section):
+    with _db() as conn:
+        row = conn.execute("SELECT 1 FROM purchases WHERE user_id=? AND section=?", (int(user_id), section)).fetchone()
+    return bool(row)
+
+def save_unlock(user_id, section, payment=None):
+    telegram_charge_id = getattr(payment, "telegram_payment_charge_id", None) if payment else None
+    provider_charge_id = getattr(payment, "provider_payment_charge_id", None) if payment else None
+    with _db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO purchases(user_id, section, telegram_charge_id, provider_charge_id) VALUES(?,?,?,?)",
+            (int(user_id), section, telegram_charge_id, provider_charge_id),
+        )
+
+# Initialize DB at startup/import time so configuration errors fail visibly.
+with _db():
+    pass
+PRICES={"love":450,"want":400,"talent":500,"career":650,"money":600,"change":500,"solar":1000,"now":400,"child":750}
 LABEL={"love":"❤️ Как я люблю","want":"🔥 Чего я хочу","talent":"✨ В чём мой талант","career":"💼 В чём моё дело","money":"💰 Как я зарабатываю","change":"🖤 Точки роста","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка"}
 
 class Birth(StatesGroup): date=State(); time=State(); city=State()
@@ -122,7 +155,7 @@ async def section(q:CallbackQuery,state:FSMContext):
         await q.message.answer("🌱 Карта потенциала ребёнка\n\nВведи дату рождения ребёнка ДД.ММ.ГГГГ:")
         await state.set_state(Child.date); await q.answer(); return
     if sec=="solar":
-        if sec in UNLOCKS.get(q.from_user.id,set()):
+        if has_unlock(q.from_user.id, sec):
             await q.message.answer("В каком городе ты будешь в день рождения? Напиши город и страну.")
             await state.set_state(Solar.city)
         else:
@@ -131,12 +164,12 @@ async def section(q:CallbackQuery,state:FSMContext):
     if sec=="now":
         try:
             now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
-            unlocked=sec in UNLOCKS.get(q.from_user.id,set())
+            unlocked=has_unlock(q.from_user.id, sec)
             await send_long(q.message.answer, current_report(p["chart"],tc,full=unlocked), reply_markup=menu() if unlocked else unlock_kb(sec))
         except Exception as e:
             await q.message.answer(f"Не получилось рассчитать текущие транзиты: {e}", reply_markup=menu())
         await q.answer(); return
-    if sec in UNLOCKS.get(q.from_user.id,set()):
+    if has_unlock(q.from_user.id, sec):
         await send_long(q.message.answer, deep(p["chart"],sec), reply_markup=menu())
     else:
         await send_long(q.message.answer, preview(p["chart"],sec), reply_markup=unlock_kb(sec))
@@ -145,17 +178,31 @@ async def section(q:CallbackQuery,state:FSMContext):
 @router.callback_query(F.data.startswith("buy:"))
 async def buy(q:CallbackQuery,bot:Bot):
     sec=q.data.split(":")[1]
+    if has_unlock(q.from_user.id, sec):
+        await q.answer("Этот раздел уже куплен — повторно платить не нужно ✨", show_alert=True)
+        return
     await bot.send_invoice(chat_id=q.from_user.id,title=LABEL[sec],description="Персональный разбор по твоей карте",payload=f"unlock:{sec}",currency="XTR",prices=[LabeledPrice(label=LABEL[sec],amount=PRICES[sec])])
     await q.answer()
 
 @router.pre_checkout_query()
 async def precheckout(q:PreCheckoutQuery):
-    await q.answer(ok=True)
+    try:
+        parts = (q.invoice_payload or "").split(":", 1)
+        sec = parts[1] if len(parts) == 2 and parts[0] == "unlock" else None
+        if sec not in PRICES:
+            await q.answer(ok=False, error_message="Не удалось определить раздел покупки.")
+            return
+        if has_unlock(q.from_user.id, sec):
+            await q.answer(ok=False, error_message="Этот раздел уже куплен. Повторная оплата не требуется.")
+            return
+        await q.answer(ok=True)
+    except Exception:
+        await q.answer(ok=False, error_message="Не удалось проверить покупку. Попробуйте ещё раз.")
 
 @router.message(F.successful_payment)
 async def paid(m:Message,state:FSMContext):
     sec=m.successful_payment.invoice_payload.split(":")[1]
-    UNLOCKS.setdefault(m.from_user.id,set()).add(sec)
+    save_unlock(m.from_user.id, sec, m.successful_payment)
     p=PROFILES.get(m.from_user.id)
     await m.answer("Готово. Разбор открыт ✨")
     if sec=="solar":
@@ -168,7 +215,7 @@ async def paid(m:Message,state:FSMContext):
             await m.answer("Введи дату рождения ребёнка ДД.ММ.ГГГГ:"); await state.set_state(Child.date)
     elif sec=="now":
         try:
-            now=datetime.now(); tc=chart(now.strftime("%d.%m.%Y"),now.strftime("%H:%M"),p["chart"]["lat"],p["chart"]["lon"])
+            tc=current_transits(p["chart"])
             await send_long(m.answer, current_report(p["chart"],tc,full=True), reply_markup=menu())
         except Exception as e:
             await m.answer(f"Не получилось рассчитать текущие транзиты: {e}", reply_markup=menu())
@@ -198,7 +245,7 @@ async def ccity(m:Message,state:FSMContext):
     try:
         lat,lon=await locate(m.text.strip()); c=chart(d["cdate"],d["ctime"],lat,lon)
         PROFILES.setdefault(m.from_user.id,{})["child_chart"]=c
-        unlocked="child" in UNLOCKS.get(m.from_user.id,set())
+        unlocked=has_unlock(m.from_user.id, "child")
         await state.clear()
         await send_long(m.answer, child_report(c,full=unlocked), reply_markup=menu() if unlocked else unlock_kb("child"))
     except Exception as e: await m.answer(f"Не получилось построить карту: {e}")

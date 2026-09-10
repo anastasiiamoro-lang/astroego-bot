@@ -553,6 +553,29 @@ def chart(date_str, time_str, lat, lon):
     return c
 
 
+def current_transits(natal=None):
+    """Calculate geocentric planetary positions for the actual current UTC instant.
+
+    If a natal chart is supplied, also place each transiting planet into the
+    natal Placidus houses. This avoids interpreting server-local time as the
+    birth-place local time.
+    """
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    jd = julian_day(now_utc)
+    planets = calculate_planets(jd)
+    north, south = _calculate_nodes(jd)
+    planets["Северный узел"] = north
+    planets["Южный узел"] = south
+    result = {"utc": now_utc, "planets": planets}
+    if natal is not None and natal.get("cusps"):
+        result["natal_houses"] = {
+            name: house_of_longitude(pt.longitude, natal["cusps"])
+            for name, pt in planets.items()
+        }
+    return result
+
+
 def _sun_longitude_at(dt_utc):
     return swe.calc_ut(julian_day(dt_utc), swe.SUN)[0][0] % 360.0
 
