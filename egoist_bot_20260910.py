@@ -48,7 +48,7 @@ def save_unlock(user_id, section, payment=None):
 # Initialize DB at startup/import time so configuration errors fail visibly.
 with _db():
     pass
-PRICES={"love":450,"want":400,"talent":500,"career":650,"money":600,"change":500,"solar":1000,"now":400,"child":750}
+PRICES={"love":600,"want":600,"talent":600,"career":800,"money":800,"change":600,"solar":1200,"now":600,"child":900}
 LABEL={"love":"❤️ Как я люблю","want":"🔥 Чего я хочу","talent":"✨ В чём мой талант","career":"💼 В чём моё дело","money":"💰 Как я зарабатываю","change":"🖤 Точки роста","solar":"☀️ Каким будет мой год","now":"🕰 Что со мной сейчас","child":"🌱 Потенциал ребёнка"}
 
 class Birth(StatesGroup): date=State(); time=State(); city=State()
