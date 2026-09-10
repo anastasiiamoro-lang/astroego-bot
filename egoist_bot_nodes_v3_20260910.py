@@ -145,6 +145,22 @@ async def start(m:Message,state:FSMContext):
     await m.answer("ЭГОИСТ\nЗдесь всё о тебе.\n\nНачнём с главного — кто ты?\n\nВведи дату рождения в формате ДД.ММ.ГГГГ:")
     await state.set_state(Birth.date)
 
+
+@router.message(Command("menu"))
+async def command_menu(m:Message,state:FSMContext):
+    await state.clear()
+    await m.answer("Куда посмотрим дальше?", reply_markup=menu())
+
+@router.message(Command("author"))
+async def command_author(m:Message):
+    text=(
+        "✨ Личный разбор с астрологом и автором EGOIST\n\n"
+        "Если вам хочется пойти глубже и получить персональный разбор своей карты, "
+        "вы можете обратиться напрямую к астрологу и автору EGOIST.\n\n"
+        "Выберите тему, которая вам сейчас наиболее важна:"
+    )
+    await m.answer(text, reply_markup=author_topics_kb())
+
 @router.message(Birth.date)
 async def bdate(m:Message,state:FSMContext):
     await state.update_data(date=m.text.strip()); await m.answer("Точное время рождения, например 14:35:"); await state.set_state(Birth.time)
