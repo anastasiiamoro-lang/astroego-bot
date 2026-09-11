@@ -3,3 +3,4 @@ pyswisseph>=2.10.3.2
 geopy>=2.4.1
 timezonefinder>=6.5.0
 tzdata>=2025.2
+openai
