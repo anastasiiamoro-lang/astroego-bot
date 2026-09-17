@@ -915,6 +915,15 @@ def has_unlock(user_id, section):
         row = conn.execute("SELECT 1 FROM purchases WHERE user_id=? AND section=?", (int(user_id), section)).fetchone()
     return bool(row)
 
+def is_admin(user_id):
+    """Owner access controlled by the ADMIN_ID Railway environment variable."""
+    admin_id = os.getenv("ADMIN_ID", "").strip()
+    return bool(admin_id) and str(user_id) == admin_id
+
+def has_access(user_id, section):
+    """The owner previews every product for free; customers still need a purchase."""
+    return is_admin(user_id) or has_unlock(user_id, section)
+
 def save_unlock(user_id, section, payment=None):
     telegram_charge_id = getattr(payment, "telegram_payment_charge_id", None) if payment else None
     provider_charge_id = getattr(payment, "provider_payment_charge_id", None) if payment else None
@@ -3807,6 +3816,14 @@ async def command_menu(m:Message,state:FSMContext):
     await state.clear()
     await m.answer("Куда посмотрим дальше?", reply_markup=menu())
 
+@router.message(Command("myid"))
+async def command_myid(m:Message):
+    await m.answer(
+        f"Твой Telegram ID: `{m.from_user.id}`\n\n"
+        "Скопируй только цифры и укажи их в Railway в переменной ADMIN_ID.",
+        parse_mode="Markdown",
+    )
+
 @router.message(Command("author"))
 async def command_author(m:Message):
     text=(
@@ -3832,8 +3849,8 @@ async def bcity(m:Message,state:FSMContext):
         lat,lon=await locate(m.text.strip()); c=chart(d["date"],d["time"],lat,lon)
         PROFILES[m.from_user.id]={"chart":c,"birth_city":m.text.strip()}
         await state.clear()
-        who_markup = menu() if has_unlock(m.from_user.id, "who") else unlock_kb("who")
-        who_text = await who_ai_text(c, paid=has_unlock(m.from_user.id, "who"))
+        who_markup = menu() if has_access(m.from_user.id, "who") else unlock_kb("who")
+        who_text = await who_ai_text(c, paid=has_access(m.from_user.id, "who"))
         await send_long(m.answer, who_text, reply_markup=who_markup)
     except Exception as e: await m.answer(f"Не получилось построить карту: {e}")
 
@@ -3869,7 +3886,7 @@ async def section(q:CallbackQuery,state:FSMContext):
 
     predictive = {"forecast_now", "forecast_3m", "forecast_love", "forecast_money", "solar_year", "synastry"}
     if sec in predictive:
-        if not has_unlock(q.from_user.id, sec):
+        if not has_access(q.from_user.id, sec):
             await q.message.answer(PRODUCT_DESCRIPTIONS[sec], reply_markup=unlock_kb(sec))
             await q.answer()
             return
@@ -3900,7 +3917,7 @@ async def section(q:CallbackQuery,state:FSMContext):
         return
 
     try:
-        unlocked = has_unlock(q.from_user.id, sec)
+        unlocked = has_access(q.from_user.id, sec)
         text = await section_ai_text(p["chart"], sec, paid=unlocked)
         await send_long(q.message.answer, text, reply_markup=menu() if unlocked else unlock_kb(sec))
     except Exception as e:
@@ -3943,6 +3960,9 @@ async def buy(q:CallbackQuery,bot:Bot):
     sec=q.data.split(":")[1]
     if sec not in PRICES:
         await q.answer("Раздел не найден.", show_alert=True)
+        return
+    if is_admin(q.from_user.id):
+        await q.answer("У тебя включён доступ владельца - оплачивать ничего не нужно ✨", show_alert=True)
         return
     if has_unlock(q.from_user.id, sec):
         await q.answer("Этот раздел уже куплен - повторно платить не нужно ✨", show_alert=True)
@@ -4019,7 +4039,7 @@ async def paid(m:Message,state:FSMContext):
 
 @router.callback_query(F.data.startswith("love_status:"))
 async def love_status_selected(q:CallbackQuery):
-    if not has_unlock(q.from_user.id, "forecast_love"):
+    if not has_access(q.from_user.id, "forecast_love"):
         await q.answer("Сначала открой прогноз.", show_alert=True)
         return
     status = q.data.split(":", 1)[1]
@@ -4137,7 +4157,7 @@ async def ccity(m:Message,state:FSMContext):
     try:
         lat,lon=await locate(m.text.strip()); c=chart(d["cdate"],d["ctime"],lat,lon)
         PROFILES.setdefault(m.from_user.id,{})["child_chart"]=c
-        unlocked=has_unlock(m.from_user.id, "child")
+        unlocked=has_access(m.from_user.id, "child")
         await state.clear()
         child_text = await section_ai_text(c, "child", paid=unlocked)
         await send_long(m.answer, child_text, reply_markup=menu() if unlocked else unlock_kb("child"))
@@ -4145,8 +4165,7 @@ async def ccity(m:Message,state:FSMContext):
 
 @router.message(Command("tech"))
 async def tech(m:Message):
-    admin=os.getenv("ADMIN_ID")
-    if not admin or str(m.from_user.id)!=str(admin): return
+    if not is_admin(m.from_user.id): return
     p=PROFILES.get(m.from_user.id)
     if p: await send_long(m.answer, technical(p["chart"]))
 
