@@ -3819,9 +3819,8 @@ async def command_menu(m:Message,state:FSMContext):
 @router.message(Command("myid"))
 async def command_myid(m:Message):
     await m.answer(
-        f"Твой Telegram ID: `{m.from_user.id}`\n\n"
-        "Скопируй только цифры и укажи их в Railway в переменной ADMIN_ID.",
-        parse_mode="Markdown",
+        f"Твой Telegram ID: {m.from_user.id}\n\n"
+        "Скопируй только цифры и укажи их в Railway в переменной ADMIN_ID."
     )
 
 @router.message(Command("author"))
