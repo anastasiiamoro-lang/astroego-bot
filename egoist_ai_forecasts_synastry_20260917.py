@@ -3955,16 +3955,18 @@ async def author_topic(q:CallbackQuery):
     await q.answer()
 
 @router.callback_query(F.data.startswith("buy:"))
-async def buy(q:CallbackQuery,bot:Bot):
+async def buy(q:CallbackQuery,bot:Bot,state:FSMContext):
     sec=q.data.split(":")[1]
     if sec not in PRICES:
         await q.answer("Раздел не найден.", show_alert=True)
         return
     if is_admin(q.from_user.id):
-        await q.answer("У тебя включён доступ владельца - оплачивать ничего не нужно ✨", show_alert=True)
+        await q.message.answer("Доступ владельца подтверждён — открываю разбор без оплаты ✨")
+        await section(q, state)
         return
     if has_unlock(q.from_user.id, sec):
-        await q.answer("Этот раздел уже куплен - повторно платить не нужно ✨", show_alert=True)
+        await q.message.answer("Этот раздел уже куплен — открываю его без повторной оплаты ✨")
+        await section(q, state)
         return
     invoice_title = INVOICE_LABELS.get(sec, LABEL[sec])
     await bot.send_invoice(chat_id=q.from_user.id,title=invoice_title,description="Персональный разбор EGOIST по данным натальной карты",payload=f"unlock:{sec}",currency="XTR",prices=[LabeledPrice(label=invoice_title,amount=PRICES[sec])])
